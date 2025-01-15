@@ -94,6 +94,7 @@ static OFCondition storeSCP(T_ASC_Association * assoc, T_DIMSE_Message * msg, T_
 static void executeOnReception();
 static void executeEndOfStudyEvents();
 static void executeOnEndOfStudy();
+static void executeOnEndOfConnection();
 static void renameOnEndOfStudy();
 static OFString replaceChars( const OFString &srcstr, const OFString &pattern, const OFString &substitute );
 static void executeCommand( const OFString &cmd );
@@ -111,7 +112,8 @@ enum E_SortStudyMode
     ESM_None,
     ESM_Timestamp,
     ESM_StudyInstanceUID,
-    ESM_PatientName
+    ESM_PatientName,
+    ESM_Timestamp_Connection,
 };
 
 OFBool             opt_showPresentationContexts = OFFalse;
@@ -153,7 +155,8 @@ OFString           lastStudyInstanceUID;
 OFString           subdirectoryPathAndName;
 OFList<OFString>   outputFileNameArray;
 static const char *opt_execOnReception = NULL;        // default: don't execute anything on reception
-static const char *opt_execOnEndOfStudy = NULL;       // default: don't execute anything on end of study
+static const char* opt_execOnEndOfStudy = NULL;       // default: don't execute anything on end of study
+static const char *opt_execOnEndOfConnection = NULL;       // default: don't execute anything on end of connection
 
 OFString           lastStudySubdirectoryPathAndName;
 static OFBool      opt_renameOnEndOfStudy = OFFalse;  // default: don't rename any files on end of study
@@ -343,6 +346,8 @@ int main(int argc, char *argv[])
     cmd.addSubGroup("sorting into subdirectories (not with --bit-preserving):");
       cmd.addOption("--sort-conc-studies",      "-ss",  1, "[p]refix: string",
                                                            "sort studies using prefix p and a timestamp");
+      cmd.addOption("--sort-conc", "-ss", 1, "[p]refix: string",
+                                                            "sort studies using prefix p and a timestamp");
       cmd.addOption("--sort-on-study-uid",      "-su",  1, "[p]refix: string",
                                                            "sort studies using prefix p and the Study\nInstance UID");
       cmd.addOption("--sort-on-patientname",    "-sp",     "sort studies using the Patient's Name and\na timestamp");
@@ -358,6 +363,8 @@ int main(int argc, char *argv[])
                                                            "execute command c after having received and\nprocessed one C-STORE-RQ message");
     cmd.addOption("--exec-on-eostudy",          "-xcs", 1, "[c]ommand: string",
                                                            "execute command c after having received and\nprocessed all C-STORE-RQ messages that belong\nto one study");
+    cmd.addOption("--exec-on-connection", "-xcc", 1, "[c]ommand: string",
+        "execute command c after having received and\nprocessed all C-STORE-RQ messages");
     cmd.addOption("--rename-on-eostudy",        "-rns",    "having received and processed all C-STORE-RQ\nmessages that belong to one study, rename\noutput files according to certain pattern");
     cmd.addOption("--eostudy-timeout",          "-tos", 1, "[t]imeout: integer",
                                                            "specifies a timeout of t seconds for\nend-of-study determination");
@@ -822,6 +829,14 @@ int main(int argc, char *argv[])
       opt_sortStudyDirPrefix = NULL;
       opt_sortStudyMode = ESM_PatientName;
     }
+
+    if (cmd.findOption("--sort-conc"))
+    {
+        app.checkConflict("--sort-conc", "--bit-preserving", opt_bitPreserving);
+        app.checkValue(cmd.getValue(opt_sortStudyDirPrefix));
+        opt_sortStudyMode = ESM_Timestamp_Connection;
+    }
+
     cmd.endOptionBlock();
 
     cmd.beginOptionBlock();
@@ -844,6 +859,15 @@ int main(int argc, char *argv[])
       app.checkDependence("--exec-on-eostudy", "--sort-conc-studies, --sort-on-study-uid or --sort-on-patientname", opt_sortStudyMode != ESM_None );
       app.checkValue(cmd.getValue(opt_execOnEndOfStudy));
     }
+
+    if (cmd.findOption("--exec-on-connection"))
+    {
+        app.checkConflict("--exec-on-connection", "--fork", opt_forkMode);
+        app.checkConflict("--exec-on-connection", "--inetd", opt_inetd_mode);
+        app.checkDependence("--exec-on-connection", "--sort-conc", opt_sortStudyMode == ESM_Timestamp_Connection);
+        app.checkValue(cmd.getValue(opt_execOnEndOfConnection));
+    }
+
 
     if (cmd.findOption("--rename-on-eostudy"))
     {
@@ -1533,6 +1557,12 @@ cleanup:
     exit(1);
   }
 
+  if (opt_sortStudyMode == ESM_Timestamp_Connection && !subdirectoryPathAndName.empty() && opt_execOnEndOfConnection != NULL) {
+    lastStudyInstanceUID.clear();
+    executeOnEndOfConnection();
+    subdirectoryPathAndName.clear();
+  }
+
   return cond;
 }
 
@@ -1832,7 +1862,7 @@ storeSCPCallback(
         // if this is the first DICOM object that was received or if the study instance UID in the
         // current DICOM object does not equal the last object's study instance UID we need to create
         // a new subdirectory in which the current DICOM object will be stored
-        if (lastStudyInstanceUID.empty() || (lastStudyInstanceUID != currentStudyInstanceUID))
+		if (lastStudyInstanceUID.empty() || (opt_sortStudyMode != ESM_Timestamp_Connection && lastStudyInstanceUID != currentStudyInstanceUID))
         {
           // if lastStudyInstanceUID is non-empty, we have just completed receiving all objects for one
           // study. In such a case, we need to set a certain indicator variable (lastStudySubdirectoryPathAndName),
@@ -1880,6 +1910,12 @@ storeSCPCallback(
               subdirectoryName += '_';
               subdirectoryName += timestamp;
               OFStandard::sanitizeFilename(subdirectoryName);
+              break;
+            case ESM_Timestamp_Connection:
+              subdirectoryName = opt_sortStudyDirPrefix;
+              if (!subdirectoryName.empty())
+                  subdirectoryName += '_';
+              subdirectoryName += timestamp;
               break;
             case ESM_None:
               break;
@@ -2372,6 +2408,34 @@ static void renameOnEndOfStudy()
     // increase counter
     counter++;
   }
+}
+
+
+
+static void executeOnEndOfConnection()
+
+{
+    OFString cmd = opt_execOnEndOfConnection;
+    OFString s;
+
+    // perform substitution for placeholder #p; #p will be substituted by lastStudySubdirectoryPathAndName
+    cmd = replaceChars(cmd, OFString(PATH_PLACEHOLDER), subdirectoryPathAndName);
+
+    // perform substitution for placeholder #a
+    s = callingAETitle;
+    sanitizeAETitle(s);
+    cmd = replaceChars(cmd, OFString(CALLING_AETITLE_PLACEHOLDER), s);
+
+    // perform substitution for placeholder #c
+    s = calledAETitle;
+    sanitizeAETitle(s);
+    cmd = replaceChars(cmd, OFString(CALLED_AETITLE_PLACEHOLDER), s);
+
+    // perform substitution for placeholder #r
+    cmd = replaceChars(cmd, OFString(CALLING_PRESENTATION_ADDRESS_PLACEHOLDER), callingPresentationAddress);
+
+    // Execute command in a new process
+    executeCommand(cmd);
 }
 
 
