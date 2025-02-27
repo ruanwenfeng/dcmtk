@@ -157,6 +157,7 @@ OFList<OFString>   outputFileNameArray;
 static const char *opt_execOnReception = NULL;        // default: don't execute anything on reception
 static const char* opt_execOnEndOfStudy = NULL;       // default: don't execute anything on end of study
 static const char *opt_execOnEndOfConnection = NULL;       // default: don't execute anything on end of connection
+OFBool             opt_logDuringReceive = OFFalse;
 
 OFString           lastStudySubdirectoryPathAndName;
 static OFBool      opt_renameOnEndOfStudy = OFFalse;  // default: don't rename any files on end of study
@@ -365,6 +366,7 @@ int main(int argc, char *argv[])
                                                            "execute command c after having received and\nprocessed all C-STORE-RQ messages that belong\nto one study");
     cmd.addOption("--exec-on-connection", "-xcc", 1, "[c]ommand: string",
         "execute command c after having received and\nprocessed all C-STORE-RQ messages");
+    cmd.addOption("--log-during-receive", "print log during receive data");
     cmd.addOption("--rename-on-eostudy",        "-rns",    "having received and processed all C-STORE-RQ\nmessages that belong to one study, rename\noutput files according to certain pattern");
     cmd.addOption("--eostudy-timeout",          "-tos", 1, "[t]imeout: integer",
                                                            "specifies a timeout of t seconds for\nend-of-study determination");
@@ -867,7 +869,10 @@ int main(int argc, char *argv[])
         app.checkDependence("--exec-on-connection", "--sort-conc", opt_sortStudyMode == ESM_Timestamp_Connection);
         app.checkValue(cmd.getValue(opt_execOnEndOfConnection));
     }
-
+    if (cmd.findOption("--log-during-receive"))
+    {
+        opt_logDuringReceive = OFTrue;
+    }
 
     if (cmd.findOption("--rename-on-eostudy"))
     {
@@ -1790,6 +1795,10 @@ storeSCPCallback(
         break;
     }
     COUT.flush();
+  }
+
+  if (opt_logDuringReceive) {
+    std::cout << "receive_dicom_c_store_data" << std::endl;
   }
 
   // if this is the final call of this function, save the data which was received to a file
