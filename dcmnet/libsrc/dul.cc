@@ -1765,6 +1765,7 @@ receiveTransportConnectionTCP(PRIVATE_NETWORKKEY ** network,
 
         // prepare the command line
         OFString cmdLine = command_argv[0];
+        // OFString cmdLine = ("\"" + std::string(command_argv[0]) + "\"").c_str();
         cmdLine += " --forked-child";
         for (int i=1; i < command_argc; ++i)
         {
@@ -1786,7 +1787,7 @@ receiveTransportConnectionTCP(PRIVATE_NETWORKKEY ** network,
             }
             cmdLine += "\"";
         }
-
+        std::cout << "forked cmdLine " << cmdLine << std::endl;
         // create anonymous pipe
         if (!CreatePipe(&hChildStdInRead, &hChildStdInWrite, &sa,0))
         {

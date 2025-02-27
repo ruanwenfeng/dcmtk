@@ -862,7 +862,7 @@ int main(int argc, char *argv[])
 
     if (cmd.findOption("--exec-on-connection"))
     {
-        app.checkConflict("--exec-on-connection", "--fork", opt_forkMode);
+        //app.checkConflict("--exec-on-connection", "--fork", opt_forkMode);
         app.checkConflict("--exec-on-connection", "--inetd", opt_inetd_mode);
         app.checkDependence("--exec-on-connection", "--sort-conc", opt_sortStudyMode == ESM_Timestamp_Connection);
         app.checkValue(cmd.getValue(opt_execOnEndOfConnection));
@@ -2504,8 +2504,18 @@ static OFString replaceChars( const OFString &srcstr, const OFString &pattern, c
   return( result );
 }
 
+std::string subreplace(std::string resource_str, std::string sub_str, std::string new_str)
+{
+    std::string dst_str = resource_str;
+    std::string::size_type pos = 0;
+    while ((pos = dst_str.find(sub_str)) != std::string::npos) {
+        dst_str.replace(pos, sub_str.length(), new_str);
+    }
+    return dst_str;
+}
 
-static void executeCommand( const OFString &cmd )
+
+static void executeCommand( const OFString &ocmd )
     /*
      * This function executes the given command line. The execution will be
      * performed in a new process which can be run in the background
@@ -2544,7 +2554,7 @@ static void executeCommand( const OFString &cmd )
   STARTUPINFOA sinfo;
   OFBitmanipTemplate<char>::zeroMem((char *)&sinfo, sizeof(sinfo));
   sinfo.cb = sizeof(sinfo);
-
+  std::string cmd = subreplace(ocmd.c_str(), "'", "\"");
   // execute command (Attention: Do not pass DETACHED_PROCESS as sixth argument to the below
   // called function because in such a case the execution of batch-files is not going to work.)
   if( !CreateProcessA(NULL, OFconst_cast(char *, cmd.c_str()), NULL, NULL, 0, 0, NULL, NULL, &sinfo, &procinfo) )
