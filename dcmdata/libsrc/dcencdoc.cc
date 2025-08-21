@@ -527,6 +527,18 @@ void DcmEncapsulatedDocument::addPDFCommandlineOptions(OFCommandLine &cmd)
   addOutputOptions(cmd);
 }
 
+void DcmEncapsulatedDocument::addHtmlCommandlineOptions(OFCommandLine& cmd)
+{
+    ftype = "html";
+    cmd.setOptionColumns(LONGCOL, SHORTCOL);
+    cmd.setParamColumn(LONGCOL + SHORTCOL + 4);
+    cmd.addParam("htmlfile-in", "Html input filename to be converted");
+    cmd.addParam("dcmfile-out", "DICOM output filename (\"-\" for stdout)");
+    addGeneralOptions(cmd);
+    addDocumentOptions(cmd);
+    addOutputOptions(cmd);
+}
+
 void DcmEncapsulatedDocument::addSTLCommandlineOptions(OFCommandLine &cmd)
 {
   ftype = "stl";
@@ -914,77 +926,78 @@ OFCondition DcmEncapsulatedDocument::createIdentifiers(OFLogger &appLogger)
 }
 
 int DcmEncapsulatedDocument::insertEncapsulatedDocument(
-        DcmItem *dataset,
-        OFLogger &appLogger)
+    DcmItem* dataset,
+    OFLogger& appLogger)
 {
-  char buf[100];
-  size_t fileSize = 0;
-  size_t buflen = 100;
-  struct stat fileStat;
+    char buf[100];
+    size_t fileSize = 0;
+    size_t buflen = 100;
+    struct stat fileStat;
 
-  if (0 == stat(opt_ifname.c_str(), &fileStat))
-  {
-    fileSize = OFstatic_cast(size_t, fileStat.st_size);
-  }
-  else
-  {
-    OFLOG_ERROR(appLogger, "file " << opt_ifname << " not found");
-    return EXITCODE_NO_INPUT_FILES;
-  }
-  if (fileSize == 0)
-  {
-    OFLOG_ERROR(appLogger, "file " << opt_ifname << " is empty");
-    return EXITCODE_INVALID_INPUT_FILE;
-  }
-  FILE *encapfile = fopen(opt_ifname.c_str(), "rb");
-  if (encapfile == NULL)
-  {
-    OFLOG_ERROR(appLogger, "unable to read file " << opt_ifname);
-    return EXITCODE_CANNOT_READ_INPUT_FILE;
-  }
-  if (fileSize < buflen)
-  {
-    buflen = fileSize;
-  }
-  if (buflen != fread(buf, 1, buflen, encapfile))
-  {
-    OFLOG_ERROR(appLogger, "read error in file " << opt_ifname);
-    fclose(encapfile);
-    return EXITCODE_INVALID_INPUT_FILE;
-  }
-  if (ftype == "pdf")
-  {
-    // check magic word for PDF file
-    if (0 != strncmp("%PDF-", buf, 5))
+    if (0 == stat(opt_ifname.c_str(), &fileStat))
     {
-      OFLOG_ERROR(appLogger, "file " << opt_ifname << " is not a PDF file");
-      fclose(encapfile);
-      return EXITCODE_INVALID_INPUT_FILE;
+        fileSize = OFstatic_cast(size_t, fileStat.st_size);
     }
-    // check PDF version number
-    char *version = buf + 5;
-    OFBool found = OFFalse;
-    for (int i = 0; i < 5; ++i)
+    else
     {
-      if (version[i] == 10 || version[i] == 13)
-      {
-        version[i] = 0; // insert end of string
-        found = OFTrue;
-        break;
-      }
+        OFLOG_ERROR(appLogger, "file " << opt_ifname << " not found");
+        return EXITCODE_NO_INPUT_FILES;
     }
-    if (!found)
+    if (fileSize == 0)
     {
-      OFLOG_ERROR(appLogger, "file " << opt_ifname
-              << ": unable to decode PDF version number");
-      fclose(encapfile);
-      return EXITCODE_INVALID_INPUT_FILE;
+        OFLOG_ERROR(appLogger, "file " << opt_ifname << " is empty");
+        return EXITCODE_INVALID_INPUT_FILE;
     }
-    OFLOG_INFO(appLogger, "file " << opt_ifname
+    FILE* encapfile = fopen(opt_ifname.c_str(), "rb");
+    if (encapfile == NULL)
+    {
+        OFLOG_ERROR(appLogger, "unable to read file " << opt_ifname);
+        return EXITCODE_CANNOT_READ_INPUT_FILE;
+    }
+    if (fileSize < buflen)
+    {
+        buflen = fileSize;
+    }
+    if (buflen != fread(buf, 1, buflen, encapfile))
+    {
+        OFLOG_ERROR(appLogger, "read error in file " << opt_ifname);
+        fclose(encapfile);
+        return EXITCODE_INVALID_INPUT_FILE;
+    }
+    if (ftype == "pdf")
+    {
+        // check magic word for PDF file
+        if (0 != strncmp("%PDF-", buf, 5))
+        {
+            OFLOG_ERROR(appLogger, "file " << opt_ifname << " is not a PDF file");
+            fclose(encapfile);
+            return EXITCODE_INVALID_INPUT_FILE;
+        }
+        // check PDF version number
+        char* version = buf + 5;
+        OFBool found = OFFalse;
+        for (int i = 0; i < 5; ++i)
+        {
+            if (version[i] == 10 || version[i] == 13)
+            {
+                version[i] = 0; // insert end of string
+                found = OFTrue;
+                break;
+            }
+        }
+        if (!found)
+        {
+            OFLOG_ERROR(appLogger, "file " << opt_ifname
+                << ": unable to decode PDF version number");
+            fclose(encapfile);
+            return EXITCODE_INVALID_INPUT_FILE;
+        }
+        OFLOG_INFO(appLogger, "file " << opt_ifname
             << ": PDF " << version << ", "
             << (fileSize + 1023) / 1024 << "kB");
-  }
-  else
+    }else if (ftype == "html") { 
+    
+    }else
   {
     if (ftype == "cda")
     {
@@ -1207,6 +1220,11 @@ OFCondition DcmEncapsulatedDocument::createHeader(
       OFLOG_TRACE(logger, "Inserting SOPClassUID to dataset");
       result = dataset->putAndInsertString(DCM_SOPClassUID, UID_EncapsulatedPDFStorage);
     }
+    if (ftype == "html")
+    {
+        OFLOG_TRACE(logger, "Inserting SOPClassUID to dataset");
+        result = dataset->putAndInsertString(DCM_SOPClassUID, UID_EncapsulatedPDFStorage);
+    }
     if (ftype == "cda")
     {
       OFLOG_TRACE(logger, "Inserting SOPClassUID to dataset");
@@ -1362,6 +1380,8 @@ OFCondition DcmEncapsulatedDocument::createHeader(
     // according to A.45.1.4.1 on part 3, MIME Type is application/pdf for PDF.
     if (ftype == "pdf")
       result = dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "application/pdf");
+    if (ftype == "html")
+        result = dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "text/html");
     // according to A.85.1.4.2 on part 3, MIME Type is model/stl.
     if (ftype == "stl")
       result = dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "model/stl");

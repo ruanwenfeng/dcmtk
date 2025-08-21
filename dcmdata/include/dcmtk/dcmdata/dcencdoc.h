@@ -95,6 +95,7 @@ public:
    *  @return none.
    */
   void addPDFCommandlineOptions(OFCommandLine& cmd);
+  void addHtmlCommandlineOptions(OFCommandLine& cmd);
 
   /** Add STL specific command line options to the OFCommandLine object
    *  passed to the constructor.
